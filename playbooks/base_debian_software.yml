@@ -1,0 +1,89 @@
+---
+# vim: set ft=ansible:
+
+- name: Refresh inventory file
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - meta: refresh_inventory
+
+- name: Check target is ready
+  gather_facts: false
+  remote_user: root
+  hosts: target
+  tasks:
+
+    - name: "Wait for {{ baremetal_provider }} instance to come online..."
+      wait_for_connection:
+        timeout: 300
+
+- name: Deploy base software configuration
+  gather_facts: true
+  remote_user: root
+  hosts: target
+  tasks:
+
+    - name: Check system matches requirements
+      assert:
+        that:
+          - ansible_memtotal_mb >= 100000
+          - ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'Ubuntu'
+
+    - name: Install required base packages
+      apt:
+        name:
+          - wget
+          - bridge-utils
+          - virtinst 
+          - libvirt-daemon
+          - qemu-kvm
+          - virt-manager
+          - libguestfs-tools
+          - libguestfs-xfs
+          - net-tools
+          - sshpass
+          - virt-what
+          - virt-top
+          - nmap
+          - python3
+          - python3-pip
+        state: latest
+      become: True
+
+    - name: Upgrade all packages
+      apt:
+        name: "*"
+        state: latest
+
+    - name: Install VirtualBMC packages and dependencies
+      shell: pip3 install virtualbmc
+      become: true
+      when: deploy_type == "ipi"
+
+    - name: Copy over vmbcd
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/etc/systemd/system/"
+        owner: root
+        group: root
+        mode: 0644
+      loop:
+        - ../conf/services/virtualbmc.service
+
+    - name: Enable vmbcd
+      ansible.builtin.shell: "{{ item }}"
+      loop:
+        - "systemctl daemon-reload"
+
+    - name: Enable VirtualBMC
+      ansible.builtin.systemd:
+        name: virtualbmc
+        enabled: yes
+        state: started
+      when: deploy_type == "ipi"
+
+    - name: Enable Libvirt
+      ansible.builtin.systemd:
+        name: libvirtd
+        enabled: yes
+        state: started
