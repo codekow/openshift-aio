@@ -1,0 +1,37 @@
+---
+# vim: set ft=ansible:
+
+- name: Refresh inventory file
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - meta: refresh_inventory
+
+- name: Check target is ready
+  gather_facts: false
+  remote_user: root
+  hosts: target
+  tasks:
+
+    - name: "Wait for {{ baremetal_provider }} instance to come online..."
+      wait_for_connection:
+        timeout: 300
+
+- name: Deploy base software configuration
+  gather_facts: true
+  remote_user: root
+  hosts: target
+  tasks:
+
+    - name: Check system matches requirements
+      assert:
+        that:
+          - ansible_memtotal_mb >= 100000
+
+    - name: Install on RHEL based OS
+      import_playbook: base_rhel_software.yml
+      when: ansible_facts['os_family'] == 'RedHat' or ansible_facts['os_family'] == 'CentOS'
+
+    - name: Install on Debian based OS
+      import_playbook: base_debian_software.yml
+      when: ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'Ubuntu'
